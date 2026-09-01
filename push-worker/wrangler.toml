@@ -1,0 +1,20 @@
+name = "bunny-reminders"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# 15:00 UTC = 8:00 AM Pacific during daylight time (7:00 AM in winter).
+[triggers]
+crons = ["0 15 * * *"]
+
+# Paste the SAME KV namespace id that the Pages project uses (bunny-data).
+[[kv_namespaces]]
+binding = "BUNNY_KV"
+id = "PASTE_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+TZ_NAME = "America/Los_Angeles"
+VAPID_SUBJECT = "mailto:oallelsefailo@gmail.com"
+VAPID_PUBLIC = "PASTE_PUBLIC_KEY_FROM_gen-vapid"
+
+# Secret (set with: npx wrangler secret put VAPID_PRIVATE_JWK):
+#   VAPID_PRIVATE_JWK = the private-key JSON printed by scripts/gen-vapid.mjs
