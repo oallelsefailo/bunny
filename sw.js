@@ -25,7 +25,7 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(e.request).then(r => {
         const copy = r.clone();
-        caches.open(VERSION).then(c => c.put(e.request, copy));
+        if (r.ok) caches.open(VERSION).then(c => c.put(e.request, copy));
         return r;
       }).catch(() => caches.match(e.request, { ignoreSearch: true }))
     );
@@ -34,7 +34,7 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
         const copy = r.clone();
-        caches.open(VERSION).then(c => c.put(e.request, copy));
+        if (r.ok) caches.open(VERSION).then(c => c.put(e.request, copy));
         return r;
       }))
     );

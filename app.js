@@ -45,7 +45,24 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 
 /* ---------- sync (Cloudflare KV via Pages Function) ---------- */
 let pushTimer = null, syncState = '';
+const LS_SYNCED = 'bunny.synced';
 function familyKey(){ return localStorage.getItem(LS_KEY) || ''; }
+// One-time guard for a device that has never synced: add anything local that
+// the cloud copy lacks, so a fresh phone can never wipe the cloud data.
+function unionInto(base, extra){
+  base.bunnies = base.bunnies || {};
+  for (const id of ['penny', 'lolo']) {
+    const bb = base.bunnies[id] = base.bunnies[id] || {}, eb = (extra.bunnies || {})[id] || {};
+    for (const k of ['weight','temp','meds','appts','vax','flea','notes','routines']) {
+      const arr = bb[k] = Array.isArray(bb[k]) ? bb[k] : [];
+      const have = new Set(arr.map(x => x.id));
+      for (const x of (eb[k] || [])) if (!have.has(x.id)) arr.push(x);
+    }
+  }
+  base.snoozes = base.snoozes || {};
+  for (const k in (extra.snoozes || {})) if (!(base.snoozes[k] >= extra.snoozes[k])) base.snoozes[k] = extra.snoozes[k];
+  return base;
+}
 function schedulePush(){
   if (!SYNC.enabled || !familyKey()) return;
   clearTimeout(pushTimer);
@@ -53,10 +70,11 @@ function schedulePush(){
 }
 async function pushRemote(){
   try {
-    const r = await fetch(SYNC.endpoint, { method: 'PUT',
+    const r = await fetch(SYNC.endpoint, { method: 'PUT', keepalive: true,
       headers: { 'x-bunny-key': familyKey(), 'content-type': 'application/json' },
       body: JSON.stringify(DB) });
     if (r.status === 401) { localStorage.removeItem(LS_KEY); askKey(); return; }
+    if (r.ok) localStorage.setItem(LS_SYNCED, '1');
     setSyncNote(r.ok ? 'synced ☁️' : 'sync hiccup, saved on this phone');
   } catch (e) { setSyncNote('offline, saved on this phone'); }
 }
@@ -67,6 +85,7 @@ async function pullRemote(){
     const r = await fetch(SYNC.endpoint, { headers: { 'x-bunny-key': familyKey() } });
     if (r.status === 401) { localStorage.removeItem(LS_KEY); askKey(); return; }
     const remote = await r.json();
+    if (remote && !localStorage.getItem(LS_SYNCED)) { DB = migrate(unionInto(remote, DB)); save(); renderAll(); }
     if (remote && remote.updatedAt > (DB.updatedAt || 0)) {
       DB = migrate(remote);
       try { localStorage.setItem(LS_DATA, JSON.stringify(DB)); } catch (e) {}
@@ -75,6 +94,7 @@ async function pullRemote(){
       pushRemote();
     }
     setSyncNote('synced ☁️');
+    localStorage.setItem(LS_SYNCED, '1');
   } catch (e) { setSyncNote('offline, saved on this phone'); }
 }
 function setSyncNote(t){ const el = document.getElementById('sync-note'); if (el) el.textContent = t; }
@@ -125,10 +145,10 @@ function upcomingFor(id){
   const b = DB.bunnies[id], items = [];
   for (const r of b.routines) if (r.nextDue) items.push({
     key: 'rt:' + id + ':' + r.id, bunny: id, icon: KINDS[r.kind] ? KINDS[r.kind][0] : '✨', kind: 'rt', id: r.id,
-    title: b.name + ' · ' + r.name, sub: unitLabel(r.every, r.unit), due: r.nextDue });
-  for (const a of b.appts) if (!a.done && daysUntil(a.date) >= -1) items.push({
+    title: b.name + ' · ' + esc(r.name), sub: unitLabel(r.every, r.unit), due: r.nextDue });
+  for (const a of b.appts) if (!a.done && daysUntil(a.date) >= -30) items.push({
     key: 'appt:' + id + ':' + a.id, bunny: id, icon: '🩺', kind: 'appt', id: a.id,
-    title: b.name + ' · ' + a.title, sub: [a.time, a.place].filter(Boolean).join(' · '), due: a.date });
+    title: b.name + ' · ' + esc(a.title), sub: esc([a.time, a.place].filter(Boolean).join(' · ')), due: a.date });
   return items;
 }
 function allUpcoming(){
@@ -208,7 +228,7 @@ function renderHome(){
 /* ---------- profile ---------- */
 const TABS = ['Overview', 'Meds', 'Weight', 'Temp', 'Appts', 'Vaccines', 'Flea', 'Notes'];
 let currentBunny = 'penny', currentTab = 'Overview';
-const latest = arr => arr.length ? arr.slice().sort((a, b) => a.date < b.date ? 1 : -1)[0] : null;
+const latest = arr => arr.length ? arr.slice().sort(byDateDesc)[0] : null;
 
 function openProfile(id){
   currentBunny = id; currentTab = 'Overview';
@@ -282,7 +302,7 @@ function listOrEmpty(html, emptyMsg, act, hint){
   return `<button class="empty tappable" onclick="${act}">${emptyMsg}<br><span class="tap-hint">${hint || 'tap here to add one ♥'}</span></button>`;
 }
 function openSheetType(t){ sheetType = t; openSheet(); }
-const byDateDesc = (a, b) => a.date < b.date ? 1 : -1;
+const byDateDesc = (a, b) => a.date === b.date ? (a.id < b.id ? 1 : -1) : (a.date < b.date ? 1 : -1);   // same day: later-added first
 
 function delEntry(btn, kind, id2){
   if (!btn.classList.contains('arm')) {
@@ -469,7 +489,7 @@ function renderChips(){
 const F = {
   date: v => `<div class="field"><label>When</label><input name="date" type="date" required value="${v || todayStr()}"></div>`,
   txt: (name, label, ph, req, v) => `<div class="field"><label>${label}</label><input name="${name}" placeholder="${ph}" ${req ? 'required' : ''} value="${esc(v || '')}"></div>`,
-  numf: (name, label, ph, v) => `<div class="field"><label>${label}</label><input name="${name}" type="number" step="0.1" inputmode="decimal" placeholder="${ph}" required value="${v ?? ''}"></div>`,
+  numf: (name, label, ph, v) => `<div class="field"><label>${label}</label><input name="${name}" type="number" step="any" inputmode="decimal" placeholder="${ph}" required value="${v ?? ''}"></div>`,
   time: v => `<div class="field"><label>Time</label><input name="time" type="time" value="${v || ''}"></div>`,
   note: v => `<div class="field"><label>Note (optional)</label><textarea name="note" rows="2" placeholder="anything worth remembering…">${esc(v || '')}</textarea></div>`,
 };
@@ -510,9 +530,10 @@ function saveEntry(ev){
     for (const r of b.routines) if (r.kind === sheetType) {
       const rn = (r.name || '').toLowerCase();
       if (!nm || !rn || nm.includes(rn) || rn.includes(nm)) {
-        r.nextDue = addInterval(e.date, r.every, r.unit);
-        r.lastDone = e.date;
-        rolled = ' · next due ' + fmtShort(r.nextDue);
+        // only roll forward: a backfilled old dose must not rewind the schedule
+        const cand = addInterval(e.date, r.every, r.unit);
+        const ok = r.lastDone ? e.date >= r.lastDone : (cand >= (r.nextDue || '') || e.date >= todayStr());
+        if (ok) { r.nextDue = cand; r.lastDone = e.date; rolled = ' · next due ' + fmtShort(r.nextDue); }
       }
     }
   }
@@ -735,6 +756,8 @@ function renderAll(){
 loadLocal();
 renderHome();
 pullRemote();
+// a pinned app resumed from the background does not reload; refresh from the cloud first
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pullRemote(); });
 if ('serviceWorker' in navigator) {
   try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
 }
