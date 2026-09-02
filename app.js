@@ -11,8 +11,8 @@ function defaultDB(){
   return {
     version: 1, updatedAt: 0,
     bunnies: {
-      penny: blankBunny('Penny', 'f', 'images/penny.webp', 'resident queen ♀'),
-      lolo:  blankBunny('Lolo',  'm', 'images/lolo.webp',  'aka “Loretto” when he’s in trouble ♂'),
+      penny: blankBunny('Penny', 'f', 'images/penny.webp', ''),   // blank = random bio line each visit
+      lolo:  blankBunny('Lolo',  'm', 'images/lolo.webp',  ''),
     },
     snoozes: {},
   };
@@ -32,6 +32,7 @@ function migrate(d){
       if (!Array.isArray(d.bunnies[id][k])) d.bunnies[id][k] = [];
     d.bunnies[id].img = DB.bunnies[id].img;   // photos are app assets, never stored data
     d.bunnies[id].name = d.bunnies[id].name || DB.bunnies[id].name;
+    if (OLD_SUBS.includes(d.bunnies[id].subtitle)) d.bunnies[id].subtitle = '';   // old seeded line -> random
   }
   d.snoozes = d.snoozes || {};
   return d;
@@ -121,6 +122,44 @@ const unitLabel = (every, unit) => 'every ' + (+every === 1 ? unit.slice(0, -1) 
 const KINDS = { flea: ['💧','Flea'], vax: ['💉','Vaccine'], meds: ['💊','Med'], other: ['✨','Other'] };
 
 /* ---------- greetings ---------- */
+// Profile bio lines: one is picked at random each time a profile opens, unless
+// she has typed her own bio (which then always wins).
+const OLD_SUBS = ['resident queen ♀', 'aka “Loretto” when he’s in trouble ♂'];
+const BIOS = {
+  penny: [
+    'resident queen',
+    'her whole world, and she knows it',
+    'professional cord inspector (by chewing)',
+    'has never met a charging cable she respected',
+    'chief of snack acquisitions',
+    'runs this house, allows humans to stay',
+    'soft on the outside, plotting on the inside',
+    'will binky for cilantro',
+    'currently judging your outfit',
+    'loaf mode: activated',
+    'the reason the cords are hidden',
+    'small, round, in charge',
+  ],
+  lolo: [
+    'aka “Loretto” when he’s in trouble',
+    'denies all knowledge of the chewed box',
+    'zoomies at 2 AM, naps at 2 PM',
+    'has a lawyer and it is Penny',
+    'professional flopper',
+    'thinks the hay is a personal buffet',
+    'gentle boy with a criminal record',
+    'periscope ears, full-time snoop',
+    'will trade one nose boop for one banana',
+    'currently under investigation',
+    'big feet, bigger opinions',
+    'the good one (allegedly)',
+  ],
+};
+function bioLine(id, b){
+  const list = BIOS[id] || [];
+  const pick = b.subtitle || list[Math.floor(Math.random() * list.length)] || '';
+  return pick + (b.sex === 'm' ? ' ♂' : b.sex === 'f' ? ' ♀' : '');
+}
 const QUIPS = [
   'Two ears up. It’s a good day.',
   'Approved by the Department of Binkies.',
@@ -252,7 +291,7 @@ function renderProfile(){
   const ph = document.getElementById('prof-photo-el');
   ph.src = b.img; ph.className = 'prof-photo ' + currentBunny; ph.alt = b.name;
   document.getElementById('prof-name').textContent = b.name;
-  document.getElementById('prof-sub').textContent = b.subtitle || 'add a little bio';
+  document.getElementById('prof-sub').textContent = bioLine(currentBunny, b);
   renderTiles(); renderTabs(); renderTab();
 }
 function renderTiles(){
@@ -615,7 +654,7 @@ function editSubtitle(){
   document.getElementById('sheet-for').textContent = 'a short line under the name';
   document.getElementById('type-chips').hidden = true;
   const form = document.getElementById('sheet-form');
-  form.innerHTML = `<div class="field"><label>Bio line</label><input name="subtitle" value="${esc(b.subtitle)}" placeholder="breed · birthday · attitude"></div>
+  form.innerHTML = `<div class="field"><label>Bio line</label><input name="subtitle" value="${esc(b.subtitle)}" placeholder="leave blank for a random one"></div>
     <button class="save-btn" type="submit">Save ♥</button>`;
   form.onsubmit = ev => {
     ev.preventDefault();
