@@ -185,6 +185,11 @@ function upcomingFor(id){
   for (const r of b.routines) if (r.nextDue) items.push({
     key: 'rt:' + id + ':' + r.id, bunny: id, icon: KINDS[r.kind] ? KINDS[r.kind][0] : '✨', kind: 'rt', id: r.id,
     title: b.name + ' · ' + esc(r.name), sub: unitLabel(r.every, r.unit), due: r.nextDue });
+  // a med, vaccine or flea entry dated today or later is a one-time reminder until that day passes
+  const ONE = { meds: ['💊', e => e.name], vax: ['💉', e => e.name], flea: ['💧', e => e.product || 'Flea treatment'] };
+  for (const k in ONE) for (const e of b[k]) if (!e.done && daysUntil(e.date) >= 0 && !routineFor(b, k, ONE[k][1](e))) items.push({
+    key: 'one:' + id + ':' + e.id + ':' + k, bunny: id, icon: ONE[k][0], kind: 'one', id: e.id,
+    title: b.name + ' · ' + esc(ONE[k][1](e)), sub: esc([e.freq, e.note].filter(Boolean).join(' · ')), due: e.date });
   for (const a of b.appts) if (!a.done && daysUntil(a.date) >= -30) items.push({
     key: 'appt:' + id + ':' + a.id, bunny: id, icon: '🩺', kind: 'appt', id: a.id,
     title: b.name + ' · ' + esc(a.title), sub: esc([a.time, a.place].filter(Boolean).join(' · ')), due: a.date });
@@ -216,6 +221,10 @@ function markDone(key){
     const a = b.appts.find(x => x.id === entryId);
     if (a) a.done = true;
     toast('Appointment done ✓');
+  } else if (kind === 'one') {
+    const e = (b[key.split(':')[3]] || []).find(x => x.id === entryId);
+    if (e) e.done = true;
+    toast('Done ✓');
   }
   save(); renderAll();
 }
