@@ -185,8 +185,8 @@ function upcomingFor(id){
   for (const r of b.routines) if (r.nextDue) items.push({
     key: 'rt:' + id + ':' + r.id, bunny: id, icon: KINDS[r.kind] ? KINDS[r.kind][0] : '✨', kind: 'rt', id: r.id,
     title: b.name + ' · ' + esc(r.name), sub: unitLabel(r.every, r.unit), due: r.nextDue });
-  // a med, vaccine or flea entry dated today or later is a one-time reminder until that day passes
-  const ONE = { meds: ['💊', e => e.name], vax: ['💉', e => e.name], flea: ['💧', e => e.product || 'Flea treatment'] };
+  // a med, vaccine, flea or note entry dated today or later is a one-time reminder until that day passes
+  const ONE = { meds: ['💊', e => e.name], vax: ['💉', e => e.name], flea: ['💧', e => e.product || 'Flea treatment'], notes: ['📔', e => e.title] };
   for (const k in ONE) for (const e of b[k]) if (!e.done && daysUntil(e.date) >= 0 && !routineFor(b, k, ONE[k][1](e))) items.push({
     key: 'one:' + id + ':' + e.id + ':' + k, bunny: id, icon: ONE[k][0], kind: 'one', id: e.id,
     title: b.name + ' · ' + esc(ONE[k][1](e)), sub: esc([e.freq, e.note].filter(Boolean).join(' · ')), due: e.date });
