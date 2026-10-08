@@ -382,7 +382,7 @@ function renderTab(){
         cls: 'active-med', extra: `<br><button class="stop-med" onclick="stopMed('${m.id}')">finished this med</button>` }, 'meds')).join('');
     const past = b.meds.filter(m => m.active === false).sort(byDateDesc)
       .map(m => entryCard({ id: m.id, title: esc(m.name), when: fmtShort(m.date), note: [m.freq, m.note].filter(Boolean).join(' · '), badge: ['ok', 'Finished'] }, 'meds')).join('');
-    el.innerHTML = listOrEmpty(act, `No active medications. ${n} is happy and healthy! 🌸`, "openSheetType('meds')") +
+    el.innerHTML = scheduleBanner(b, 'meds') + listOrEmpty(act, `No active medications. ${n} is happy and healthy! 🌸`, "openSheetType('meds')") +
       (past ? `<div class="section-title" style="margin-top:18px"><h3>Past meds</h3></div><div class="entry-list">${past}</div>` : '');
   }
   else if (T === 'Weight' || T === 'Temp') {
@@ -410,19 +410,16 @@ function renderTab(){
     el.innerHTML = listOrEmpty(up + done, 'No appointments on the books 🩺', "openSheetType('appts')");
   }
   else if (T === 'Vaccines') {
-    el.innerHTML = listOrEmpty(b.vax.slice().sort(byDateDesc).map(v => {
+    el.innerHTML = scheduleBanner(b, 'vax') + listOrEmpty(b.vax.slice().sort(byDateDesc).map(v => {
       let badge = ['ok', 'Done'];
       if (v.nextDue) { const d = daysUntil(v.nextDue); badge = d < 0 ? ['late', 'Overdue since ' + fmtShort(v.nextDue)] : [d <= 30 ? 'soon' : 'ok', 'Next due ' + fmtLong(v.nextDue)]; }
       return entryCard({ id: v.id, title: esc(v.name), when: fmtShort(v.date), note: v.note, badge }, 'vax');
     }).join(''), 'No vaccine records yet. RHDV2 is the big one for house rabbits 💉', "openSheetType('vax')");
   }
   else if (T === 'Flea') {
-    const rts = b.routines.filter(r => r.kind === 'flea' && r.nextDue);
-    const head = rts.length ? `<div class="empty" style="border-style:solid;margin-bottom:12px">${rts.map(r =>
-      `<strong>${esc(r.name)}</strong> · ${unitLabel(r.every, r.unit)} · next <strong>${fmtShort(r.nextDue)}</strong>`).join('<br>')}</div>` : '';
-    el.innerHTML = head + listOrEmpty(b.flea.slice().sort(byDateDesc).map(f =>
+    el.innerHTML = scheduleBanner(b, 'flea') + listOrEmpty(b.flea.slice().sort(byDateDesc).map(f =>
       entryCard({ id: f.id, title: esc(f.product || 'Flea treatment'), when: fmtShort(f.date), note: f.note }, 'flea')).join(''),
-      'No flea treatments logged yet. Add the schedule in the care plan 🗓️', 'openPlan()', 'tap here to open the care plan ♥');
+      'No flea treatments logged yet. Log one and set how often it repeats 💧', "openSheetType('flea')");
   }
   else if (T === 'Notes') {
     el.innerHTML = listOrEmpty(b.notes.slice().sort(byDateDesc).map(x =>
@@ -531,15 +528,23 @@ const F = {
   numf: (name, label, ph, v) => `<div class="field"><label>${label}</label><input name="${name}" type="number" step="any" inputmode="decimal" placeholder="${ph}" required value="${v ?? ''}"></div>`,
   time: v => `<div class="field"><label>Time</label><input name="time" type="time" value="${v || ''}"></div>`,
   note: v => `<div class="field"><label>Note (optional)</label><textarea name="note" rows="2" placeholder="anything worth remembering…">${esc(v || '')}</textarea></div>`,
+  // repeat: blank = one-off. Prefilled from the matching schedule when editing.
+  repeat: (kind, pre) => {
+    const r = sheetMode === 'edit' ? routineFor(DB.bunnies[currentBunny], kind, pre.name || pre.product) : null;
+    return `<div class="field-row">
+      <div class="field"><label>Repeat every</label><input name="every" type="number" min="1" max="36" inputmode="numeric" placeholder="no repeat" value="${r ? r.every : ''}"></div>
+      <div class="field"><label>Unit</label><select name="unit">${['days','weeks','months'].map(u => `<option ${u === (r ? r.unit : 'weeks') ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+    </div><p class="note" style="margin:-6px 0 12px;font-size:.72rem">Set a repeat and it shows up on the home screen as a reminder. Leave blank for a one-time entry.</p>`;
+  },
 };
 function renderForm(pre = {}){
   const map = {
     weight: `<div class="field-row">${F.date(pre.date)}${F.numf('value', 'Weight (lb)', '7.2', pre.value)}</div>${F.note(pre.note)}`,
     temp:   `<div class="field-row">${F.date(pre.date)}${F.numf('value', 'Temp (°F)', '101.8', pre.value)}</div>${F.note(pre.note)}`,
-    meds:   `${F.txt('name', 'Medication', 'Metacam 0.3 ml', 1, pre.name)}<div class="field-row">${F.date(pre.date)}${F.txt('freq', 'How often', 'once daily', 0, pre.freq)}</div>${F.note(pre.note)}`,
+    meds:   `${F.txt('name', 'Medication', 'Metacam 0.3 ml', 1, pre.name)}<div class="field-row">${F.date(pre.date)}${F.txt('freq', 'How often', 'once daily', 0, pre.freq)}</div>${F.repeat('meds', pre)}${F.note(pre.note)}`,
     appts:  `${F.txt('title', 'What for', 'annual checkup', 1, pre.title)}<div class="field-row">${F.date(pre.date)}${F.time(pre.time)}</div>${F.txt('place', 'Where', 'vet clinic', 0, pre.place)}${F.note(pre.note)}`,
-    vax:    `${F.txt('name', 'Vaccine', 'RHDV2 booster', 1, pre.name)}${F.date(pre.date)}${F.note(pre.note)}`,
-    flea:   `${F.txt('product', 'Product', 'Revolution', 0, pre.product)}${F.date(pre.date)}${F.note(pre.note)}`,
+    vax:    `${F.txt('name', 'Vaccine', 'RHDV2 booster', 1, pre.name)}${F.date(pre.date)}${F.repeat('vax', pre)}${F.note(pre.note)}`,
+    flea:   `${F.txt('product', 'Product', 'Revolution', 0, pre.product)}${F.date(pre.date)}${F.repeat('flea', pre)}${F.note(pre.note)}`,
     notes:  `${F.txt('title', 'Title', 'binkied twice today 🥰', 1, pre.title)}${F.date(pre.date)}${F.note(pre.note)}`,
   };
   const form = document.getElementById('sheet-form');
@@ -552,11 +557,16 @@ function saveEntry(ev){
   for (const [k, v] of fd.entries()) vals[k] = typeof v === 'string' ? v.trim() : v;
   if (sheetType === 'weight' || sheetType === 'temp') vals.value = parseFloat(vals.value);
   const b = DB.bunnies[currentBunny];
+  const hasRepeat = sheetType === 'meds' || sheetType === 'vax' || sheetType === 'flea';
+  const every = parseInt(vals.every) || 0, unit = vals.unit || 'weeks';
+  delete vals.every; delete vals.unit;                 // repeat lives on the schedule, not the entry
 
   if (sheetMode === 'edit' && editingId) {           // adjust in place, history intact
     const e = b[sheetType].find(x => x.id === editingId);
     if (e) Object.assign(e, vals);
-    save(); closeSheet(); toast('Updated ✓'); renderProfile();
+    let msg = 'Updated ✓';
+    if (e && hasRepeat) { const r = syncRoutine(b, sheetType, e.name || e.product, e.date, every, unit); msg += r === 'removed' ? ' · schedule removed' : r; }
+    save(); closeSheet(); toast(msg); renderProfile();
     return;
   }
 
@@ -564,11 +574,11 @@ function saveEntry(ev){
   if (sheetType === 'meds') e.active = true;
   b[sheetType].push(e);
   let rolled = '';
-  if (sheetType === 'flea' || sheetType === 'vax') {
+  if (hasRepeat && every > 0) rolled = syncRoutine(b, sheetType, e.name || e.product, e.date, every, unit);
+  else if (hasRepeat) {
     const nm = (e.product || e.name || '').toLowerCase();
     for (const r of b.routines) if (r.kind === sheetType) {
-      const rn = (r.name || '').toLowerCase();
-      if (!nm || !rn || nm.includes(rn) || rn.includes(nm)) {
+      if (namesMatch(nm, r.name)) {
         // only roll forward: a backfilled old dose must not rewind the schedule
         const cand = addInterval(e.date, r.every, r.unit);
         const ok = r.lastDone ? e.date >= r.lastDone : (cand >= (r.nextDue || '') || e.date >= todayStr());
@@ -581,6 +591,46 @@ function saveEntry(ev){
 }
 
 /* ---------- care plan (per-bunny schedules) ---------- */
+// A log entry and a schedule belong together when their names overlap (case-insensitive).
+function namesMatch(a, b){
+  a = (a || '').toLowerCase().trim(); b = (b || '').toLowerCase().trim();
+  return !a || !b || a.includes(b) || b.includes(a);
+}
+function routineFor(b, kind, name){
+  return b.routines.find(r => r.kind === kind && namesMatch(name, r.name)) || null;
+}
+// Create or update the schedule that goes with a logged entry. every <= 0 means "no repeat".
+function syncRoutine(b, kind, name, date, every, unit){
+  let r = routineFor(b, kind, name);
+  if (!(every > 0)) {
+    if (r && sheetMode === 'edit') { b.routines = b.routines.filter(x => x !== r); return 'removed'; }
+    return '';
+  }
+  if (!r) { r = { id: uid(), name: name || KINDS[kind][1], kind, every, unit }; b.routines.push(r); }
+  r.every = every; r.unit = unit;
+  if (!r.lastDone || date >= r.lastDone) { r.lastDone = date; r.nextDue = addInterval(date, every, unit); }
+  else r.nextDue = addInterval(r.lastDone, every, unit);
+  return ' · next due ' + fmtShort(r.nextDue);
+}
+// Banner at the top of the Meds / Vaccines / Flea tabs: the schedules of that kind, with edit + remove.
+function scheduleBanner(b, kind){
+  const rts = b.routines.filter(r => r.kind === kind && r.nextDue);
+  if (!rts.length) return '';
+  return `<div class="empty" style="border-style:solid;margin-bottom:12px;text-align:left">${rts.map(r =>
+    `<div class="row" style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><strong>🗓️ ${esc(r.name)}</strong><span class="when num">${fmtShort(r.nextDue)}</span></div>
+     <p class="note" style="margin:2px 0 0">${unitLabel(r.every, r.unit)} · next ${fmtLong(r.nextDue)}</p>
+     <button class="stop-med" onclick="openRoutine('${r.id}')">✎ edit</button>
+     <button class="stop-med" onclick="delRoutine(this,'${r.id}')">✕ remove</button>`).join('<hr style="border:none;border-top:1px solid var(--line);margin:10px 0">')}
+    <p class="note" style="margin-top:10px;font-size:.72rem">Logging a dose with the same name moves the next date forward.</p></div>`;
+}
+function openRoutine(id){
+  sheetMode = 'plan';
+  document.getElementById('sheet-title').textContent = 'Edit schedule 🗓️';
+  document.getElementById('sheet-for').innerHTML = 'for <strong>' + DB.bunnies[currentBunny].name + '</strong>';
+  document.getElementById('type-chips').hidden = true;
+  editRoutine(id);
+  showSheet();
+}
 function openPlan(){
   sheetMode = 'plan';
   const b = DB.bunnies[currentBunny];
@@ -593,10 +643,10 @@ function openPlan(){
 function renderPlanList(){
   const b = DB.bunnies[currentBunny];
   const rows = b.routines.map(r => `<div class="entry">
-      <button class="del" onclick="delRoutine(this,'${r.id}')" aria-label="Remove schedule">✕</button>
       <div class="row"><strong>${KINDS[r.kind] ? KINDS[r.kind][0] : '✨'} ${esc(r.name)}</strong><span class="when num">${r.nextDue ? fmtShort(r.nextDue) : ''}</span></div>
       <p class="note">${unitLabel(r.every, r.unit)}${r.nextDue ? ' · next ' + fmtLong(r.nextDue) : ''}</p>
       <button class="stop-med" onclick="editRoutine('${r.id}')">✎ edit</button>
+      <button class="stop-med" onclick="delRoutine(this,'${r.id}')">✕ remove</button>
     </div>`).join('');
   const form = document.getElementById('sheet-form');
   form.innerHTML = (rows
@@ -637,13 +687,14 @@ function editRoutine(id){
 }
 function delRoutine(btn, id){
   if (!btn.classList.contains('arm')) {
-    btn.classList.add('arm'); btn.textContent = 'remove?';
-    setTimeout(() => { btn.classList.remove('arm'); btn.textContent = '✕'; }, 2600);
+    const was = btn.textContent;
+    btn.classList.add('arm'); btn.textContent = 'tap again to remove';
+    setTimeout(() => { btn.classList.remove('arm'); btn.textContent = was; }, 2600);
     return;
   }
   const b = DB.bunnies[currentBunny];
   b.routines = b.routines.filter(r => r.id !== id);
-  save(); renderPlanList(); renderProfile(); toast('Removed');
+  save(); if (sheetMode === 'plan') renderPlanList(); renderProfile(); toast('Schedule removed');
 }
 
 /* ---------- edit subtitle / family key ---------- */
